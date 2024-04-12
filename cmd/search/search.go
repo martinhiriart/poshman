@@ -7,6 +7,9 @@ package search
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
+	"github.com/martinhiriart/poshman/styling"
 	"io"
 	"os/exec"
 	"time"
@@ -82,6 +85,7 @@ var SearchCmd = &cobra.Command{
 			cmd.HelpFunc()(cmd, args)
 		}
 		for _, arg := range args {
+
 			findModule(arg)
 		}
 
@@ -124,10 +128,25 @@ func findModule(module string) {
 	switch {
 	case errStr != "":
 		errMsg := fmt.Errorf("[!] PowerShell module '%s' not found\n", module)
-		fmt.Println(errMsg.Error())
+		fmt.Println(styling.StyleErrMsg(errMsg))
 	default:
 		output := getSearchResults(stdOut)
-		fmt.Printf("%s, %s, %s\n\n", output.Name, output.Version, output.Repository)
+		//fmt.Printf("%s, %s, %s\n\n", output.Name, output.Version, output.Repository)
+		t := table.New().
+			Border(lipgloss.NormalBorder()).
+			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("99"))).
+			StyleFunc(func(row, col int) lipgloss.Style {
+				switch {
+				case row == 0:
+					return styling.TableHeaderStyle
+				default:
+					return styling.TableBaseStyle
+				}
+			}).
+			Headers("NAME", "VERSION", "REPOSITORY").
+			Width(60)
+		t.Row(output.Name, output.Version, output.Repository)
+		fmt.Println(t)
 	}
 
 	if err := query.Wait(); err != nil {
