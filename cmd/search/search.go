@@ -4,6 +4,7 @@ Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 package search
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os/exec"
@@ -79,10 +80,6 @@ var SearchCmd = &cobra.Command{
 		if len(args) < 1 {
 			cmd.HelpFunc()(cmd, args)
 		}
-		//fmt.Println("search called")
-		////if len(args) > 0 {
-		////	fmt.Println(args[0])
-		////}
 		for _, arg := range args {
 			findModule(arg)
 		}
@@ -95,11 +92,23 @@ func getStdErr(stdErr io.ReadCloser) string {
 	return fmt.Sprintf("%s", errStr)
 }
 
+func getSearchResults(stdOut io.ReadCloser) SearchModuleInfo {
+	var modInfo SearchModuleInfo
+	if err := json.NewDecoder(stdOut).Decode(&modInfo); err != nil {
+		fmt.Printf("Error parsing JSON output: %s\n", err)
+	}
+	return modInfo
+}
+
 func findModule(module string) {
 	queryText := fmt.Sprintf("pwsh -Command \"Find-Module %s | ConvertTo-Json -Depth 100\"", module)
 	query := exec.Command("bash", "-c", queryText)
 	//output, err := query.StdoutPipe()
 	stdErr, err := query.StderrPipe()
+	if err != nil {
+		fmt.Printf("ERROR: %v\n", err)
+	}
+	stdOut, err := query.StdoutPipe()
 	if err != nil {
 		fmt.Printf("ERROR: %v\n", err)
 	}
@@ -110,23 +119,25 @@ func findModule(module string) {
 	fmt.Printf("Searching for module '%s'...\n", module)
 
 	errStr := getStdErr(stdErr)
-	if errStr != "" {
-		fmt.Printf("PowerShell module '%s' not found\n", module)
+
+	switch {
+	case errStr != "":
+		errMsg := fmt.Errorf("[!] PowerShell module '%s' not found\n", module)
+		fmt.Println(errMsg.Error())
+	default:
+		output := getSearchResults(stdOut)
+		fmt.Printf("%s, %s, %s\n\n", output.Name, output.Version, output.Repository)
 	}
+
 	if err := query.Wait(); err != nil {
 		fmt.Printf("ERROR: %v\n", err)
 	}
 
-	//switch {
-	//case strings.Contains(string(query), fmt.Sprintf("Find-Package: No match was found for the specified search criteria and module name '%s'.", module)):
-	//	fmt.Printf("ERROR: %s\n", query)
-	//default:
 	//	var modInfo SearchModuleInfo
 	//	if err := json.Unmarshal(query, &modInfo); err != nil {
 	//		fmt.Printf("ERROR: %v\n", err)
 	//	}
 	//	fmt.Println(modInfo)
-	//}
 
 }
 
