@@ -1,3 +1,4 @@
+// Package search provides functionality to search for PowerShell modules from the poshman CLI
 /*
 Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 */
@@ -13,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type SearchModuleInfo struct {
+type ModuleInfo struct {
 	Name          string   `json:"Name"`
 	Version       string   `json:"Version"`
 	Type          string   `json:"Type"`
@@ -92,8 +93,8 @@ func getStdErr(stdErr io.ReadCloser) string {
 	return fmt.Sprintf("%s", errStr)
 }
 
-func getSearchResults(stdOut io.ReadCloser) SearchModuleInfo {
-	var modInfo SearchModuleInfo
+func getSearchResults(stdOut io.ReadCloser) ModuleInfo {
+	var modInfo ModuleInfo
 	if err := json.NewDecoder(stdOut).Decode(&modInfo); err != nil {
 		fmt.Printf("Error parsing JSON output: %s\n", err)
 	}
