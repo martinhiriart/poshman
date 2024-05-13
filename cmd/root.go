@@ -22,11 +22,43 @@ THE SOFTWARE.
 package cmd
 
 import (
-	"github.com/martinhiriart/poshman/cmd/install"
-	"github.com/martinhiriart/poshman/cmd/search"
-	"github.com/spf13/cobra"
+	"bytes"
+	"fmt"
 	"os"
+	"os/exec"
+
+	"github.com/martinhiriart/poshman/styling"
+	"github.com/spf13/cobra"
 )
+
+// func getStdErr(stdErr io.ReadCloser) string {
+// 	errStr, _ := io.ReadAll(stdErr)
+// 	return fmt.Sprintf("%s", errStr)
+// }
+
+// func getStdOut(stdOut io.ReadCloser) string {
+// 	outStr, _ := io.ReadAll(stdOut)
+// 	return fmt.Sprintf("%s", outStr)
+// }
+
+func runCommand(cStr string) (stdOut, stdErr bytes.Buffer, errs error) {
+	cmdStr := fmt.Sprintf("%s | ConvertTo-Json -Depth 100", cStr)
+	cmd := exec.Command("pwsh", "-Command", cmdStr)
+	var sOut bytes.Buffer
+	var sErr bytes.Buffer
+	cmd.Stdout = &sOut
+	cmd.Stderr = &sErr
+	err := cmd.Run()
+
+	if err != nil {
+		fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error running command: %s\\n\"", err)))
+	}
+	if stdErr.String() != "" {
+		fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error: %s\\n\"", stdErr.String())))
+	}
+
+	return sOut, sErr, err
+}
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -47,11 +79,6 @@ func Execute() {
 	}
 }
 
-func addSubCommandPalettes() {
-	rootCmd.AddCommand(search.SearchCmd)
-	rootCmd.AddCommand(install.InstallCmd)
-}
-
 func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
@@ -63,5 +90,4 @@ func init() {
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 
-	addSubCommandPalettes()
 }

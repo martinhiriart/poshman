@@ -1,23 +1,21 @@
-// Package search provides functionality to search for PowerShell modules from the poshman CLI
 /*
 Copyright © 2024 NAME HERE <EMAIL ADDRESS>
 */
-package search
+package cmd
 
 import (
 	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/martinhiriart/poshman/styling"
-	"io"
-	"os/exec"
-	"time"
-
 	"github.com/spf13/cobra"
 )
 
-type ModuleInfo struct {
+type SearchResults struct {
 	Name          string   `json:"Name"`
 	Version       string   `json:"Version"`
 	Type          string   `json:"Type"`
@@ -75,102 +73,113 @@ type ModuleInfo struct {
 	} `json:"AdditionalMetadata"`
 }
 
-// SearchCmd represents the search command
-var SearchCmd = &cobra.Command{
-	Use:   "search",
+// searchCmd represents the search command
+var searchCmd = &cobra.Command{
+	Use:   "search [Module1 Module2 ...]",
 	Short: "Search for a specific PowerShell module",
 	Long:  `Search for a specific PowerShell module`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
 			cmd.HelpFunc()(cmd, args)
 		}
-		for _, arg := range args {
-
-			findModule(arg)
+		if len(args) > 1 {
+			var wg sync.WaitGroup
+			wg.Add(len(args))
+			for _, arg := range args {
+				go findModuleParallel(arg, true, &wg)
+			}
+			wg.Wait()
+		} else {
+			for _, arg := range args {
+				findModule(arg, true)
+			}
 		}
 
 	},
 }
 
-func getStdErr(stdErr io.ReadCloser) string {
-	errStr, _ := io.ReadAll(stdErr)
-	return fmt.Sprintf("%s", errStr)
+func printModuleSearchInfo(module string, s SearchResults) {
+	fmt.Println(styling.StyleSuccessMsg(fmt.Sprintf("[✓] Module found: %s", module)))
+	tableHeaderStyle := lipgloss.NewStyle().
+		Align(lipgloss.Center).
+		Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}).
+		Bold(true)
+	tableBaseStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}).
+		Align(lipgloss.Center)
+	t := table.New().
+		Border(lipgloss.NormalBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("#366EBA"))).
+		StyleFunc(func(row, col int) lipgloss.Style {
+			switch {
+			case row == 0:
+				return tableHeaderStyle
+			}
+			return tableBaseStyle
+		}).
+		Width(100).
+		Headers("NAME", "VERSION", "REPOSITORY").
+		Row(s.Name, s.Version, s.Repository).
+		String()
+	fmt.Println(t)
+	fmt.Println()
 }
 
-func getSearchResults(stdOut io.ReadCloser) ModuleInfo {
-	var modInfo ModuleInfo
-	if err := json.NewDecoder(stdOut).Decode(&modInfo); err != nil {
-		fmt.Printf("Error parsing JSON output: %s\n", err)
+func findModule(module string, print bool) {
+	var s SearchResults
+	query := fmt.Sprintf("Find-Module %s", module)
+	fmt.Println(styling.StyleStatusMsg(fmt.Sprintf("Searching for module '%s'...\n", module)))
+	stdOut, stdErr, err := runCommand(query)
+	if err != nil {
+		fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error: %s\\n\"", stdErr.String())))
 	}
-	return modInfo
+
+	if stdErr.String() != "" {
+		fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] PowerShell module '%s' not found\n", module)))
+	} else {
+		if err := json.NewDecoder(&stdOut).Decode(&s); err != nil {
+			fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error parsing JSON output: %s\\n\"", err)))
+		}
+		if print {
+			printModuleSearchInfo(module, s)
+		}
+	}
+
 }
 
-func findModule(module string) {
-	queryText := fmt.Sprintf("pwsh -Command \"Find-Module %s | ConvertTo-Json -Depth 100\"", module)
-	query := exec.Command("bash", "-c", queryText)
-	//output, err := query.StdoutPipe()
-	stdErr, err := query.StderrPipe()
+func findModuleParallel(module string, print bool, wg *sync.WaitGroup) {
+	defer wg.Done()
+	var s SearchResults
+	query := fmt.Sprintf("Find-Module %s", module)
+	fmt.Println(styling.StyleStatusMsg(fmt.Sprintf("Searching for module '%s'...\n", module)))
+	stdOut, stdErr, err := runCommand(query)
 	if err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-	}
-	stdOut, err := query.StdoutPipe()
-	if err != nil {
-		fmt.Printf("ERROR: %v\n", err)
+		fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error: %s\\n\"", stdErr.String())))
 	}
 
-	if err := query.Start(); err != nil {
-		fmt.Printf("ERROR: %v\n", err)
+	if stdErr.String() != "" {
+		fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] PowerShell module '%s' not found\n", module)))
+	} else {
+		if err := json.NewDecoder(&stdOut).Decode(&s); err != nil {
+			fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error parsing JSON output: %s\\n\"", err)))
+		}
+		if print {
+			printModuleSearchInfo(module, s)
+		}
 	}
-	fmt.Printf("Searching for module '%s'...\n", module)
-
-	errStr := getStdErr(stdErr)
-
-	switch {
-	case errStr != "":
-		errMsg := fmt.Errorf("[!] PowerShell module '%s' not found\n", module)
-		fmt.Println(styling.StyleErrMsg(errMsg))
-	default:
-		output := getSearchResults(stdOut)
-		//fmt.Printf("%s, %s, %s\n\n", output.Name, output.Version, output.Repository)
-		t := table.New().
-			Border(lipgloss.NormalBorder()).
-			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("99"))).
-			StyleFunc(func(row, col int) lipgloss.Style {
-				switch {
-				case row == 0:
-					return styling.TableHeaderStyle
-				default:
-					return styling.TableBaseStyle
-				}
-			}).
-			Headers("NAME", "VERSION", "REPOSITORY").
-			Width(60)
-		t.Row(output.Name, output.Version, output.Repository)
-		fmt.Println(t)
-	}
-
-	if err := query.Wait(); err != nil {
-		fmt.Printf("ERROR: %v\n", err)
-	}
-
-	//	var modInfo SearchModuleInfo
-	//	if err := json.Unmarshal(query, &modInfo); err != nil {
-	//		fmt.Printf("ERROR: %v\n", err)
-	//	}
-	//	fmt.Println(modInfo)
 
 }
 
 func init() {
-	//var mod  SearchModuleInfo{}
+	rootCmd.AddCommand(searchCmd)
 
 	// Here you will define your flags and configuration settings.
 
 	// Cobra supports Persistent Flags which will work for this command
 	// and all subcommands, e.g.:
-	// SearchCmd.PersistentFlags().String("foo", "", "A help for foo")
+	// searchCmd.PersistentFlags().String("foo", "", "A help for foo")
 
 	// Cobra supports local flags which will only run when this command
 	// is called directly, e.g.:
-	// SearchCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// searchCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
