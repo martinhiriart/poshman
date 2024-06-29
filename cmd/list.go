@@ -1,11 +1,9 @@
-/*
-Copyright © 2024 NAME HERE <EMAIL ADDRESS>
-*/
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
+
+	json "github.com/json-iterator/go"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -17,7 +15,7 @@ var (
 	descending bool
 )
 
-type InstalledModules []struct {
+type InstalledModules struct {
 	Name          string   `json:"Name"`
 	Version       string   `json:"Version"`
 	Type          string   `json:"Type"`
@@ -30,34 +28,33 @@ type InstalledModules []struct {
 	UpdatedDate   any      `json:"UpdatedDate"`
 	LicenseURI    string   `json:"LicenseUri"`
 	ProjectURI    string   `json:"ProjectUri"`
-	IconURI       string   `json:"IconUri"`
+	IconURI       any      `json:"IconUri"`
 	Tags          []string `json:"Tags"`
 	Includes      struct {
-		RoleCapability []any `json:"RoleCapability"`
 		Workflow       []any `json:"Workflow"`
-		Cmdlet         []any `json:"Cmdlet"`
 		Function       []any `json:"Function"`
-		DscResource    []any `json:"DscResource"`
 		Command        []any `json:"Command"`
+		DscResource    []any `json:"DscResource"`
+		RoleCapability []any `json:"RoleCapability"`
+		Cmdlet         []any `json:"Cmdlet"`
 	} `json:"Includes"`
 	PowerShellGetFormatVersion any    `json:"PowerShellGetFormatVersion"`
-	ReleaseNotes               string `json:"ReleaseNotes"`
+	ReleaseNotes               any    `json:"ReleaseNotes"`
 	Dependencies               []any  `json:"Dependencies"`
 	RepositorySourceLocation   string `json:"RepositorySourceLocation"`
 	Repository                 string `json:"Repository"`
 	PackageManagementProvider  string `json:"PackageManagementProvider"`
 	AdditionalMetadata         struct {
 		Summary                   string `json:"summary"`
-		Description               string `json:"description"`
-		InstalledLocation         string `json:"InstalledLocation"`
-		Copyright                 string `json:"copyright"`
-		Tags                      string `json:"tags"`
-		Installeddate             string `json:"installeddate"`
 		PackageManagementProvider string `json:"PackageManagementProvider"`
-		ReleaseNotes              string `json:"releaseNotes"`
-		Published                 string `json:"published"`
-		SourceName                string `json:"SourceName"`
 		Type                      string `json:"Type"`
+		SourceName                string `json:"SourceName"`
+		Tags                      string `json:"tags"`
+		Copyright                 string `json:"copyright"`
+		Published                 string `json:"published"`
+		Description               string `json:"description"`
+		Installeddate             string `json:"installeddate"`
+		InstalledLocation         string `json:"InstalledLocation"`
 		IsPrerelease              bool   `json:"IsPrerelease"`
 	} `json:"AdditionalMetadata"`
 	InstalledLocation string `json:"InstalledLocation"`
@@ -66,19 +63,15 @@ type InstalledModules []struct {
 // listCmd represents the list command
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "List all installed PowerShell modules",
+	Long:  `List all installed PowerShell modules`,
 	Run: func(cmd *cobra.Command, args []string) {
-		listModules()
+		fmt.Println(styling.StyleStatusMsg(fmt.Sprint("Getting installed modules...")))
+		listModules(true, "")
 	},
 }
 
-func printInstalledModuleInfo(i InstalledModules) {
+func printInstalledModuleInfo(i []InstalledModules) {
 	tableHeaderStyle := lipgloss.NewStyle().
 		Align(lipgloss.Center).
 		Foreground(lipgloss.AdaptiveColor{Light: "#000000", Dark: "#FFFFFF"}).
@@ -105,30 +98,81 @@ func printInstalledModuleInfo(i InstalledModules) {
 	fmt.Println()
 }
 
-func listModules() {
+func listModules(print bool, module string) []InstalledModules {
 	var (
-		i     InstalledModules
+		m     InstalledModules
+		i     []InstalledModules
 		query string
 	)
-	if descending {
-		query = fmt.Sprintf("Get-InstalledModule | Sort-Object Name -Descending")
-	} else {
-		query = fmt.Sprintf("Get-InstalledModule | Sort-Object Name")
-	}
-
-	fmt.Println(styling.StyleStatusMsg(fmt.Sprintln("Getting installed modules...")))
-	stdOut, stdErr, err := runCommand(query)
-	if err != nil {
-		fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error: %s\\n\"", stdErr.String())))
-	}
-	if stdErr.String() != "" {
-		fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error retrieving installed modules")))
-	} else {
-		if err := json.NewDecoder(&stdOut).Decode(&i); err != nil {
-			fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error parsing JSON output: %s\\n\"", err)))
+	if module == "" {
+		if descending {
+			query = fmt.Sprintf("Get-InstalledModule | Sort-Object Name -Descending")
+		} else {
+			query = fmt.Sprintf("Get-InstalledModule | Sort-Object Name")
 		}
-		printInstalledModuleInfo(i)
+		stdOut, stdErr, err := runCommand(query)
+		if err != nil {
+			fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error: %s\n", stdErr.String())))
+		}
+		if stdErr.String() != "" {
+			fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error retrieving installed modules")))
+		} else {
+			if stdOut.Len() <= 0 {
+				fmt.Println(styling.StyleWarningMsg(fmt.Sprint("[!] No modules installed")))
+			} else {
+				switch string(stdOut.String()[0]) {
+				case "{":
+					if err := json.NewDecoder(&stdOut).Decode(&m); err != nil {
+						fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error parsing JSON output: %s\n", err)))
+					} else {
+						i = append(i, m)
+						if print {
+							printInstalledModuleInfo(i)
+						}
+					}
+				default:
+					if err := json.NewDecoder(&stdOut).Decode(&i); err != nil {
+						fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error parsing JSON output: %s\n", err)))
+					} else {
+						if print {
+							printInstalledModuleInfo(i)
+						}
+					}
+				}
+			}
+
+		}
+	} else {
+		query = fmt.Sprintf("Get-InstalledModule -Name %s | Sort-Object Name", module)
+		stdOut, stdErr, err := runCommand(query)
+		if err != nil {
+			fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error: %s\n", stdErr.String())))
+		}
+		if stdErr.String() != "" {
+			fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error retrieving installed modules")))
+		} else {
+			switch string(stdOut.String()[0]) {
+			case "{":
+				if err := json.NewDecoder(&stdOut).Decode(&m); err != nil {
+					fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error parsing JSON output: %s\n", err)))
+				} else {
+					i = append(i, m)
+					if print {
+						printInstalledModuleInfo(i)
+					}
+				}
+			default:
+				if err := json.NewDecoder(&stdOut).Decode(&i); err != nil {
+					fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error parsing JSON output: %s\n", err)))
+				} else {
+					if print {
+						printInstalledModuleInfo(i)
+					}
+				}
+			}
+		}
 	}
+	return i
 }
 
 func init() {

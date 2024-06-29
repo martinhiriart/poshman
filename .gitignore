@@ -1,2 +1,4 @@
 bin
 archive
+*.tape
+.DS_Store

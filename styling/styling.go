@@ -16,6 +16,9 @@ var (
 	statusStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.AdaptiveColor{Light: "#0099cc", Dark: "#00ffff"})
+	warningStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "#ff9900", Dark: "#ffad33"})
 )
 
 func StyleErrMsg(err error) string {
@@ -28,6 +31,10 @@ func StyleSuccessMsg(text string) string {
 
 func StyleStatusMsg(text string) string {
 	return strings.TrimSpace(statusStyle.Render(text))
+}
+
+func StyleWarningMsg(text string) string {
+	return strings.TrimSpace(warningStyle.Render(text))
 }
 
 // func GetTableHeaderStyle() lipgloss.Style {

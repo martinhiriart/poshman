@@ -67,7 +67,20 @@ var rootCmd = &cobra.Command{
 	Long:  ``,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+	Run: func(cmd *cobra.Command, args []string) {
+		logo := `
+		          __
+   ___  ___  ___ / /  __ _  ___ ____
+  / _ \/ _ \(_-</ _ \/  ' \/ _ ` + "`" + `/ _ \
+ / .__/\___/___/_//_/_/_/_/\_,_/_//_/
+/_/
+
+		`
+		fmt.Println(styling.StyleStatusMsg(logo))
+		if len(args) < 1 {
+			cmd.HelpFunc()(cmd, args)
+		}
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

@@ -1,13 +1,11 @@
-/*
-Copyright © 2024 NAME HERE <EMAIL ADDRESS>
-*/
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
+
+	json "github.com/json-iterator/go"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -21,7 +19,7 @@ type SearchResults struct {
 	Type          string   `json:"Type"`
 	Description   string   `json:"Description"`
 	Author        string   `json:"Author"`
-	CompanyName   string   `json:"CompanyName"`
+	CompanyName   any      `json:"CompanyName"`
 	Copyright     string   `json:"Copyright"`
 	PublishedDate string   `json:"PublishedDate"`
 	InstalledDate any      `json:"InstalledDate"`
@@ -38,13 +36,18 @@ type SearchResults struct {
 		Workflow       []any    `json:"Workflow"`
 		Cmdlet         []any    `json:"Cmdlet"`
 	} `json:"Includes"`
-	PowerShellGetFormatVersion any    `json:"PowerShellGetFormatVersion"`
-	ReleaseNotes               any    `json:"ReleaseNotes"`
-	Dependencies               []any  `json:"Dependencies"`
-	RepositorySourceLocation   string `json:"RepositorySourceLocation"`
-	Repository                 string `json:"Repository"`
-	PackageManagementProvider  string `json:"PackageManagementProvider"`
-	AdditionalMetadata         struct {
+	PowerShellGetFormatVersion any `json:"PowerShellGetFormatVersion"`
+	ReleaseNotes               any `json:"ReleaseNotes"`
+	Dependencies               []struct {
+		Name            string `json:"Name"`
+		MinimumVersion  string `json:"MinimumVersion,omitempty"`
+		CanonicalID     string `json:"CanonicalId"`
+		RequiredVersion string `json:"RequiredVersion,omitempty"`
+	} `json:"Dependencies"`
+	RepositorySourceLocation  string `json:"RepositorySourceLocation"`
+	Repository                string `json:"Repository"`
+	PackageManagementProvider string `json:"PackageManagementProvider"`
+	AdditionalMetadata        struct {
 		Summary                   string    `json:"summary"`
 		Copyright                 string    `json:"copyright"`
 		GUID                      string    `json:"GUID"`
@@ -76,8 +79,8 @@ type SearchResults struct {
 // searchCmd represents the search command
 var searchCmd = &cobra.Command{
 	Use:   "search [Module1 Module2 ...]",
-	Short: "Search for a specific PowerShell module",
-	Long:  `Search for a specific PowerShell module`,
+	Short: "Search for a specific PowerShell module(s)",
+	Long:  `Search for a specific PowerShell module(s)`,
 	Run: func(cmd *cobra.Command, args []string) {
 		if len(args) < 1 {
 			cmd.HelpFunc()(cmd, args)
@@ -86,10 +89,12 @@ var searchCmd = &cobra.Command{
 			var wg sync.WaitGroup
 			wg.Add(len(args))
 			for _, arg := range args {
+				// fmt.Println(styling.StyleStatusMsg(fmt.Sprintf("Searching for module '%s'...\n", arg)))
 				go findModuleParallel(arg, true, &wg)
 			}
 			wg.Wait()
 		} else {
+			// fmt.Println(styling.StyleStatusMsg(fmt.Sprintf("Searching for module '%s'...\n", args)))
 			for _, arg := range args {
 				findModule(arg, true)
 			}
@@ -125,33 +130,37 @@ func printModuleSearchInfo(module string, s SearchResults) {
 	fmt.Println()
 }
 
-func findModule(module string, print bool) {
+func findModule(module string, print bool) SearchResults {
 	var s SearchResults
-	query := fmt.Sprintf("Find-Module %s", module)
-	fmt.Println(styling.StyleStatusMsg(fmt.Sprintf("Searching for module '%s'...\n", module)))
+	query := fmt.Sprintf("Find-Module -Name %s", module)
+
 	stdOut, stdErr, err := runCommand(query)
 	if err != nil {
-		fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error: %s\\n\"", stdErr.String())))
+		fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error: %s\n", stdErr.String())))
 	}
 
 	if stdErr.String() != "" {
 		fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] PowerShell module '%s' not found\n", module)))
 	} else {
 		if err := json.NewDecoder(&stdOut).Decode(&s); err != nil {
-			fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error parsing JSON output: %s\\n\"", err)))
+			fmt.Println(styling.StyleErrMsg(fmt.Errorf("[!] Error parsing JSON output: %s\n", err)))
 		}
 		if print {
 			printModuleSearchInfo(module, s)
 		}
 	}
-
+	return s
 }
 
-func findModuleParallel(module string, print bool, wg *sync.WaitGroup) {
+func returnSearchResults(s SearchResults) SearchResults {
+	return s
+}
+
+func findModuleParallel(module string, print bool, wg *sync.WaitGroup) SearchResults {
 	defer wg.Done()
 	var s SearchResults
 	query := fmt.Sprintf("Find-Module %s", module)
-	fmt.Println(styling.StyleStatusMsg(fmt.Sprintf("Searching for module '%s'...\n", module)))
+
 	stdOut, stdErr, err := runCommand(query)
 	if err != nil {
 		fmt.Println(styling.StyleErrMsg(fmt.Errorf("\"[!] Error: %s\\n\"", stdErr.String())))
@@ -167,7 +176,7 @@ func findModuleParallel(module string, print bool, wg *sync.WaitGroup) {
 			printModuleSearchInfo(module, s)
 		}
 	}
-
+	return s
 }
 
 func init() {
